@@ -1,15 +1,18 @@
 #!/bin/bash
 
-# Установщик ActiV-Energy
-# Создание базового окружения клиента.
+# Установщик ActiV-Energy.
+# Создание базового окружения клиента и установка AECored как systemd-сервиса.
 
 set -e
 
 APP_NAME="ActiV-Energy Core"
 INSTALL_DIR="${HOME}/activ-energy"
+AECORDED_REPOSITORY="https://github.com/lotusv2/AECored_1.2.git"
+AECORDED_SERVICE=""
 
 USER_ID=""
 DRIVERS=""
+ACTION="install"
 
 print_error()
 {
@@ -27,15 +30,21 @@ print_usage()
 Использование:
 
     ./AEinstall.sh --userid <userid> [--drivers <driver1,driver2,...>]
+    ./AEinstall.sh --update --userid <userid>
+    ./AEinstall.sh --remove --userid <userid>
 
 Параметры:
 
     --userid    Идентификатор клиента ActiV-Energy.
     --drivers   Список драйверов для установки.
+    --update    Обновить AECored из GitHub.
+    --remove    Удалить AECored и его systemd-сервис.
 
-Пример:
+Примеры:
 
     ./AEinstall.sh --userid 45 --drivers itron761,gama
+    ./AEinstall.sh --update --userid 45
+    ./AEinstall.sh --remove --userid 45
 EOF
 }
 
@@ -71,6 +80,16 @@ parse_arguments()
                 shift 2
                 ;;
 
+            --update)
+                ACTION="update"
+                shift
+                ;;
+
+            --remove)
+                ACTION="remove"
+                shift
+                ;;
+
             --help|-h)
                 print_usage
                 exit 0
@@ -90,10 +109,12 @@ parse_arguments()
         exit 1
     fi
 
-    if ! [[ "${USER_ID}" =~ ^[0-9]+$ ]]; then
-        print_error "Параметр --userid должен содержать целое число."
+    if ! [[ "${USER_ID}" =~ ^[0-9]+$ ]] || [ "${USER_ID}" -lt 1 ]; then
+        print_error "Параметр --userid должен содержать положительное целое число."
         exit 1
     fi
+
+    AECORDED_SERVICE="${USER_ID}_AECored.service"
 }
 
 install_system_packages()
@@ -108,8 +129,12 @@ install_system_packages()
         packages+=(python3-venv)
     fi
 
+    if ! command -v git >/dev/null 2>&1; then
+        packages+=(git)
+    fi
+
     if [ "${#packages[@]}" -eq 0 ]; then
-        print_info "Python 3 и python3-venv уже установлены."
+        print_info "Python 3, python3-venv и git уже установлены."
         return
     fi
 
@@ -134,7 +159,6 @@ check_python()
     fi
 
     PYTHON_VERSION="$(python3 --version 2>&1)"
-
     print_info "Найден ${PYTHON_VERSION}."
 }
 
@@ -172,7 +196,6 @@ create_venv()
     fi
 
     rm -rf "${INSTALL_DIR}/venv"
-
     python3 -m venv "${INSTALL_DIR}/venv"
 
     print_info "Python environment создан."
@@ -186,19 +209,155 @@ verify_environment()
     fi
 
     "${INSTALL_DIR}/venv/bin/python" --version
-
     print_info "Python environment проверен."
+}
+
+create_aecored_config()
+{
+    mkdir -p "${INSTALL_DIR}/config"
+
+    cat > "${INSTALL_DIR}/config/aecored.ini" <<EOF
+[aecored]
+# Идентификатор пользователя ActiV-Energy.
+user_id = ${USER_ID}
+EOF
+}
+
+stop_aecored_service()
+{
+    if sudo systemctl is-active --quiet "${AECORDED_SERVICE}"; then
+        print_info "Остановка ${AECORDED_SERVICE}..."
+        sudo systemctl stop "${AECORDED_SERVICE}"
+    else
+        print_info "${AECORDED_SERVICE} не запущен."
+    fi
+}
+
+remove_aecored_service()
+{
+    stop_aecored_service
+
+    if sudo systemctl is-enabled --quiet "${AECORDED_SERVICE}" 2>/dev/null; then
+        sudo systemctl disable "${AECORDED_SERVICE}"
+    fi
+
+    if [ -f "/etc/systemd/system/${AECORDED_SERVICE}" ]; then
+        sudo rm -f "/etc/systemd/system/${AECORDED_SERVICE}"
+    fi
+
+    sudo systemctl daemon-reload
+}
+
+install_aecored_service()
+{
+    local service_file="/tmp/${AECORDED_SERVICE}"
+    local python_path="${INSTALL_DIR}/venv/bin/python"
+    local config_path="${INSTALL_DIR}/config/aecored.ini"
+
+    cat > "${service_file}" <<EOF
+[Unit]
+Description=ActiV-Energy AECored instance ${USER_ID}
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=${USER}
+Group=$(id -gn)
+WorkingDirectory=${INSTALL_DIR}/core
+ExecStart=${python_path} -m aecored.aecored ${config_path}
+Restart=on-failure
+RestartSec=5
+WatchdogSec=30s
+TimeoutStartSec=30s
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    sudo install -m 644 "${service_file}" "/etc/systemd/system/${AECORDED_SERVICE}"
+    rm -f "${service_file}"
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable "${AECORDED_SERVICE}"
+}
+
+clone_aecored()
+{
+    local temp_dir
+    temp_dir="$(mktemp -d)"
+
+    print_info "Загрузка AECored из GitHub..."
+    git clone --depth 1 "${AECORDED_REPOSITORY}" "${temp_dir}/AECored_1.2"
+
+    rm -rf "${INSTALL_DIR}/core"
+    mkdir -p "${INSTALL_DIR}/core"
+    cp -a "${temp_dir}/AECored_1.2/aecored" "${INSTALL_DIR}/core/"
+
+    rm -rf "${temp_dir}"
+}
+
+install_aecored()
+{
+    print_info "Установка AECored для пользователя ${USER_ID}..."
+
+    stop_aecored_service || true
+    remove_aecored_service
+    clone_aecored
+    create_aecored_config
+    install_aecored_service
+
+    sudo systemctl start "${AECORDED_SERVICE}"
+
+    print_info "AECored установлен и запущен как ${AECORDED_SERVICE}."
+}
+
+update_aecored()
+{
+    if [ ! -d "${INSTALL_DIR}/core" ]; then
+        print_error "AECored не установлен. Сначала выполните обычную установку."
+        exit 1
+    fi
+
+    print_info "Обновление AECored для пользователя ${USER_ID}..."
+    print_info "Текущая конфигурация будет сохранена."
+
+    stop_aecored_service
+    remove_aecored_service
+
+    clone_aecored
+    install_aecored_service
+
+    sudo systemctl start "${AECORDED_SERVICE}"
+
+    print_info "AECored обновлён и запущен."
+}
+
+remove_aecored()
+{
+    print_info "Удаление AECored для пользователя ${USER_ID}..."
+
+    remove_aecored_service
+    rm -rf "${INSTALL_DIR}/core"
+    rm -f "${INSTALL_DIR}/config/aecored.ini"
+
+    print_info "AECored удалён. Остальные каталоги ActiV-Energy сохранены."
 }
 
 show_result()
 {
     echo
     echo "========================================"
-    echo " ${APP_NAME}: установка завершена"
+    echo " ${APP_NAME}: операция завершена"
     echo "========================================"
     echo
     echo "Клиент:       ${USER_ID}"
     echo "Каталог:      ${INSTALL_DIR}"
+    echo "Сервис:       ${AECORDED_SERVICE}"
     echo "Драйверы:     ${DRIVERS:-не указаны}"
     echo
 }
@@ -210,9 +369,25 @@ main()
     install_system_packages
     check_python
     check_python_venv
-    create_directories
-    create_venv
-    verify_environment
+
+    case "${ACTION}" in
+        install)
+            create_directories
+            create_venv
+            verify_environment
+            install_aecored
+            ;;
+
+        update)
+            verify_environment
+            update_aecored
+            ;;
+
+        remove)
+            remove_aecored
+            ;;
+    esac
+
     show_result
 }
 
