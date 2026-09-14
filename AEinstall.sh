@@ -42,7 +42,8 @@ print_usage()
 
 Примеры:
 
-    ./AEinstall.sh --userid 45 --drivers itron761,gama
+    ./AEinstall.sh --userid 45 --drivers test_driver
+    ./AEinstall.sh --userid 45 --drivers test_driver,itron761,gama
     ./AEinstall.sh --update --userid 45
     ./AEinstall.sh --remove --userid 45
 EOF
@@ -223,6 +224,59 @@ user_id = ${USER_ID}
 EOF
 }
 
+create_scheduler_config()
+{
+    local scheduler_config="${INSTALL_DIR}/config/scheduler.ini"
+
+    if [ -f "${scheduler_config}" ]; then
+        print_info "Конфигурация Scheduler уже существует, она сохранена."
+        return
+    fi
+
+    cat > "${scheduler_config}" <<EOF
+# Конфигурация Scheduler ActiV-Energy.
+# Задачи создаются установщиком из параметра --drivers.
+# Расписание по умолчанию: каждые 5 минут.
+EOF
+
+    if [ -n "${DRIVERS}" ]; then
+        IFS=',' read -ra DRIVER_LIST <<< "${DRIVERS}"
+
+        for driver in "${DRIVER_LIST[@]}"; do
+            driver="$(echo "${driver}" | xargs)"
+            [ -z "${driver}" ] && continue
+
+            cat >> "${scheduler_config}" <<EOF
+
+[task:${driver}]
+enabled = yes
+command = ${INSTALL_DIR}/drivers/${driver}.py
+schedule = */5 * * * *
+EOF
+        done
+    fi
+}
+
+install_test_driver()
+{
+    local driver_name="test_driver"
+    local source_file="${INSTALL_DIR}/core/tests/test_driver.py"
+    local target_file="${INSTALL_DIR}/drivers/${driver_name}.py"
+
+    if [[ ",${DRIVERS}," != *",${driver_name},"* ]]; then
+        return
+    fi
+
+    if [ ! -f "${source_file}" ]; then
+        print_error "Тестовый драйвер не найден в AECored: ${source_file}"
+        exit 1
+    fi
+
+    cp "${source_file}" "${target_file}"
+    chmod 755 "${target_file}"
+    print_info "Тестовый драйвер установлен: ${target_file}"
+}
+
 stop_aecored_service()
 {
     if sudo systemctl is-active --quiet "${AECORDED_SERVICE}"; then
@@ -297,6 +351,7 @@ clone_aecored()
     rm -rf "${INSTALL_DIR}/core"
     mkdir -p "${INSTALL_DIR}/core"
     cp -a "${temp_dir}/AECored_1.2/aecored" "${INSTALL_DIR}/core/"
+    cp -a "${temp_dir}/AECored_1.2/tests" "${INSTALL_DIR}/core/"
 
     rm -rf "${temp_dir}"
 }
@@ -309,6 +364,8 @@ install_aecored()
     remove_aecored_service
     clone_aecored
     create_aecored_config
+    create_scheduler_config
+    install_test_driver
     install_aecored_service
 
     sudo systemctl start "${AECORDED_SERVICE}"
@@ -324,7 +381,7 @@ update_aecored()
     fi
 
     print_info "Обновление AECored для пользователя ${USER_ID}..."
-    print_info "Текущая конфигурация будет сохранена."
+    print_info "Текущие конфигурации будут сохранены."
 
     stop_aecored_service
     remove_aecored_service
@@ -344,6 +401,7 @@ remove_aecored()
     remove_aecored_service
     rm -rf "${INSTALL_DIR}/core"
     rm -f "${INSTALL_DIR}/config/aecored.ini"
+    rm -f "${INSTALL_DIR}/config/scheduler.ini"
 
     print_info "AECored удалён. Остальные каталоги ActiV-Energy сохранены."
 }
