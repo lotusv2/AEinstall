@@ -89,18 +89,63 @@ parse_arguments()
         print_usage
         exit 1
     fi
+
+    if ! [[ "${USER_ID}" =~ ^[0-9]+$ ]]; then
+        print_error "Параметр --userid должен содержать целое число."
+        exit 1
+    fi
+}
+
+install_system_packages()
+{
+    local packages=()
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        packages+=(python3)
+    fi
+
+    if ! dpkg-query -W -f='${Status}' python3-venv 2>/dev/null | grep -q "install ok installed"; then
+        packages+=(python3-venv)
+    fi
+
+    if [ "${#packages[@]}" -eq 0 ]; then
+        print_info "Python 3 и python3-venv уже установлены."
+        return
+    fi
+
+    if ! command -v sudo >/dev/null 2>&1; then
+        print_error "Для установки системных пакетов требуется sudo."
+        print_error "Установите sudo или установите вручную: ${packages[*]}"
+        exit 1
+    fi
+
+    print_info "Требуются системные пакеты: ${packages[*]}"
+    print_info "Для их установки потребуется пароль sudo."
+
+    sudo apt-get update
+    sudo apt-get install -y "${packages[@]}"
 }
 
 check_python()
 {
     if ! command -v python3 >/dev/null 2>&1; then
-        print_error "Python 3 не найден."
+        print_error "Python 3 не найден после установки."
         exit 1
     fi
 
     PYTHON_VERSION="$(python3 --version 2>&1)"
 
     print_info "Найден ${PYTHON_VERSION}."
+}
+
+check_python_venv()
+{
+    if ! dpkg-query -W -f='${Status}' python3-venv 2>/dev/null | grep -q "install ok installed"; then
+        print_error "Пакет python3-venv не установлен."
+        exit 1
+    fi
+
+    print_info "Пакет python3-venv установлен."
 }
 
 create_directories()
@@ -162,7 +207,9 @@ main()
 {
     parse_arguments "$@"
     check_root
+    install_system_packages
     check_python
+    check_python_venv
     create_directories
     create_venv
     verify_environment
