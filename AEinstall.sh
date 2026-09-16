@@ -148,7 +148,8 @@ install_aecored_config()
     sed -i -E "s|^drivers = .*|drivers = ${INSTALL_DIR}/drivers|" "${target_file}"
     sed -i -E "s|^data = .*|data = ${INSTALL_DIR}/data|" "${target_file}"
     sed -i -E "s|^run = .*|run = ${INSTALL_DIR}/run|" "${target_file}"
-    sed -i -E "s|^password = .*|password = pass${USER_ID}|" "${target_file}"
+    sed -i -E "/^\[http\]/,/^\[/{s|^password = .*|password = pass${USER_ID}|}" "${target_file}"
+    sed -i -E "/^\[scheduler\]/,/^\[/{s|^config = .*|config = ${INSTALL_DIR}/config/scheduler.ini|}" "${target_file}"
 
     print_info "Конфигурация AECored установлена из шаблона репозитория."
 }
