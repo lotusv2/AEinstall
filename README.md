@@ -17,15 +17,21 @@
 ```text
 ~/activ-energy/
 ├── core/
-│   └── aecored/
+│   ├── aecored/
+│   ├── config.ini          # шаблон, скопированный из репозитория AECored
+│   ├── tests/
+│   └── requirements.txt
 ├── config/
-│   └── aecored.ini
+│   ├── aecored.ini         # конфигурация экземпляра
+│   └── scheduler.ini
 ├── drivers/
 ├── data/
 ├── logs/
 ├── run/
 └── venv/
 ```
+
+Шаблон основной конфигурации хранится в репозитории AECored по пути `config/config.ini`. Установщик не генерирует основной конфигурационный файл с нуля: он копирует шаблон, после чего подставляет `user_id`, пути конкретного экземпляра и пароль HTTP.
 
 Сервис получает имя:
 
@@ -42,6 +48,8 @@ systemctl status 45_AECored.service
 journalctl -u 45_AECored.service -f
 ```
 
+HTTP-порт для `user_id=45` — `9045` (`9000 + user_id`).
+
 ### Обновление AECored
 
 При выпуске новой версии AECored достаточно выполнить:
@@ -54,15 +62,14 @@ journalctl -u 45_AECored.service -f
 
 1. останавливает сервис;
 2. отключает старый systemd unit;
-3. удаляет старый код AECored из памяти/файловой системы;
-4. загружает свежий `AECored_1.2` из GitHub;
-5. сохраняет существующую конфигурацию клиента;
-6. создаёт systemd unit заново;
-7. выполняет `daemon-reload`;
-8. включает сервис;
-9. запускает новую версию.
+3. загружает свежий `AECored_1.2` из GitHub;
+4. обновляет Python-зависимости;
+5. создаёт systemd unit заново;
+6. выполняет `daemon-reload`;
+7. включает сервис;
+8. запускает новую версию.
 
-Каталоги `drivers`, `data` и `logs` при обновлении не затрагиваются.
+Пользовательские `config/aecored.ini` и `config/scheduler.ini` при обновлении не заменяются. Каталоги `drivers`, `data` и `logs` также не затрагиваются.
 
 ### Удаление AECored
 
