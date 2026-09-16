@@ -185,17 +185,6 @@ EOF
     fi
 }
 
-install_test_driver()
-{
-    local driver_name="test_driver"
-    local source_file="${INSTALL_DIR}/core/tests/test_driver.py"
-    local target_file="${INSTALL_DIR}/drivers/${driver_name}.py"
-    [[ ",${DRIVERS}," == *",${driver_name},"* ]] || return
-    [ -f "${source_file}" ] || { print_error "Тестовый драйвер не найден в AECored: ${source_file}"; exit 1; }
-    cp "${source_file}" "${target_file}"
-    chmod 755 "${target_file}"
-}
-
 stop_aecored_service()
 {
     if sudo systemctl is-active --quiet "${AECORDED_SERVICE}"; then sudo systemctl stop "${AECORDED_SERVICE}"; fi
@@ -255,12 +244,16 @@ clone_aecored()
     mkdir -p "${INSTALL_DIR}/core" "${INSTALL_DIR}/config"
     cp -a "${temp_dir}/AECored_1.2/aecored" "${INSTALL_DIR}/core/"
     cp -a "${temp_dir}/AECored_1.2/requirements.txt" "${INSTALL_DIR}/core/"
-    cp -a "${temp_dir}/AECored_1.2/config/config.ini" "${INSTALL_DIR}/config/config.ini.template"
 
-    # Тестовый драйвер нужен только если он выбран через --drivers.
+    # Шаблон конфигурации нужен только при первичной установке.
+    if [ ! -f "${INSTALL_DIR}/config/aecored.ini" ]; then
+        cp -a "${temp_dir}/AECored_1.2/config/config.ini" "${INSTALL_DIR}/config/config.ini.template"
+    fi
+
+    # Тестовый драйвер устанавливается только если он выбран через --drivers.
     if [[ ",${DRIVERS}," == *",test_driver,"* ]]; then
-        mkdir -p "${INSTALL_DIR}/core/tests"
-        cp -a "${temp_dir}/AECored_1.2/tests/test_driver.py" "${INSTALL_DIR}/core/tests/"
+        cp -a "${temp_dir}/AECored_1.2/tests/test_driver.py" "${INSTALL_DIR}/drivers/test_driver.py"
+        chmod 755 "${INSTALL_DIR}/drivers/test_driver.py"
     fi
 
     rm -rf "${temp_dir}"
@@ -274,7 +267,6 @@ install_aecored()
     install_python_dependencies
     install_aecored_config
     create_scheduler_config
-    install_test_driver
     install_aecored_service
     sudo systemctl start "${AECORDED_SERVICE}"
 }
