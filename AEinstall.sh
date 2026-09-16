@@ -128,25 +128,29 @@ install_python_dependencies()
     "${INSTALL_DIR}/venv/bin/python" -m pip install -r "${requirements_file}"
 }
 
-create_aecored_config()
+install_aecored_config()
 {
-    mkdir -p "${INSTALL_DIR}/config"
-    cat > "${INSTALL_DIR}/config/aecored.ini" <<EOF
-[aecored]
-# Идентификатор пользователя ActiV-Energy.
-user_id = ${USER_ID}
+    local source_file="${INSTALL_DIR}/core/config.ini"
+    local target_file="${INSTALL_DIR}/config/aecored.ini"
 
-[http]
-# Адрес, на котором HTTP-модуль принимает подключения.
-host = 0.0.0.0
+    [ -f "${source_file}" ] || {
+        print_error "Шаблон конфигурации AECored не найден: ${source_file}"
+        exit 1
+    }
 
-# Порт формируется по user_id: 45 -> 90045, 46 -> 90046.
-port = $((9000 + USER_ID))
+    cp "${source_file}" "${target_file}"
 
-# Пароль для доступа к командам модулей.
-# Пользователь может изменить его после установки.
-password = pass${USER_ID}
-EOF
+    # Подставляем параметры конкретного экземпляра в шаблон из репозитория.
+    sed -i -E "s|^user_id = .*|user_id = ${USER_ID}|" "${target_file}"
+    sed -i -E "s|^root = .*|root = ${INSTALL_DIR}|" "${target_file}"
+    sed -i -E "s|^config = .*|config = ${INSTALL_DIR}/config|" "${target_file}"
+    sed -i -E "s|^logs = .*|logs = ${INSTALL_DIR}/logs|" "${target_file}"
+    sed -i -E "s|^drivers = .*|drivers = ${INSTALL_DIR}/drivers|" "${target_file}"
+    sed -i -E "s|^data = .*|data = ${INSTALL_DIR}/data|" "${target_file}"
+    sed -i -E "s|^run = .*|run = ${INSTALL_DIR}/run|" "${target_file}"
+    sed -i -E "s|^password = .*|password = pass${USER_ID}|" "${target_file}"
+
+    print_info "Конфигурация AECored установлена из шаблона репозитория."
 }
 
 create_scheduler_config()
@@ -246,6 +250,7 @@ clone_aecored()
     cp -a "${temp_dir}/AECored_1.2/aecored" "${INSTALL_DIR}/core/"
     cp -a "${temp_dir}/AECored_1.2/tests" "${INSTALL_DIR}/core/"
     cp -a "${temp_dir}/AECored_1.2/requirements.txt" "${INSTALL_DIR}/core/"
+    cp -a "${temp_dir}/AECored_1.2/config.ini" "${INSTALL_DIR}/core/"
     rm -rf "${temp_dir}"
 }
 
@@ -255,7 +260,7 @@ install_aecored()
     remove_aecored_service
     clone_aecored
     install_python_dependencies
-    create_aecored_config
+    install_aecored_config
     create_scheduler_config
     install_test_driver
     install_aecored_service
@@ -290,7 +295,7 @@ show_result()
     echo "Клиент:       ${USER_ID}"
     echo "Каталог:      ${INSTALL_DIR}"
     echo "Сервис:       ${AECORDED_SERVICE}"
-    echo "HTTP-порт:    $((90000 + USER_ID))"
+    echo "HTTP-порт:    $((9000 + USER_ID))"
     echo "HTTP-пароль:  pass${USER_ID}"
     echo "Драйверы:     ${DRIVERS:-не указаны}"
     echo
