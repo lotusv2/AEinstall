@@ -223,6 +223,7 @@ TimeoutStartSec=30s
 TimeoutStopSec=30s
 KillSignal=SIGTERM
 Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=${INSTALL_DIR}/core
 
 [Install]
 WantedBy=multi-user.target
