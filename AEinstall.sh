@@ -114,7 +114,9 @@ create_venv()
 verify_environment()
 {
     [ -x "${INSTALL_DIR}/venv/bin/python" ] || { print_error "Не удалось создать Python environment."; exit 1; }
+    [ -x "${INSTALL_DIR}/venv/bin/pip" ] || { print_error "В Python environment не найден pip."; exit 1; }
     "${INSTALL_DIR}/venv/bin/python" --version
+    "${INSTALL_DIR}/venv/bin/pip" --version
 }
 
 install_python_dependencies()
@@ -124,13 +126,13 @@ install_python_dependencies()
         print_error "Файл зависимостей не найден: ${requirements_file}"
         exit 1
     fi
-    "${INSTALL_DIR}/venv/bin/python" -m pip install --upgrade pip
+    # pip уже устанавливается при создании venv. Обновлять его при каждом запуске установщика не требуется.
     "${INSTALL_DIR}/venv/bin/python" -m pip install -r "${requirements_file}"
 }
 
 install_aecored_config()
 {
-    local source_file="${INSTALL_DIR}/core/config.ini"
+    local source_file="${INSTALL_DIR}/config/config.ini.template"
     local target_file="${INSTALL_DIR}/config/aecored.ini"
 
     [ -f "${source_file}" ] || {
@@ -139,6 +141,7 @@ install_aecored_config()
     }
 
     cp "${source_file}" "${target_file}"
+    rm -f "${source_file}"
 
     # Подставляем параметры конкретного экземпляра в шаблон из репозитория.
     sed -i -E "s|^user_id = .*|user_id = ${USER_ID}|" "${target_file}"
@@ -246,12 +249,20 @@ clone_aecored()
     local temp_dir
     temp_dir="$(mktemp -d)"
     git clone --depth 1 "${AECORDED_REPOSITORY}" "${temp_dir}/AECored_1.2"
+
+    # В конечную установку переносим только файлы, необходимые для работы AECored.
     rm -rf "${INSTALL_DIR}/core"
-    mkdir -p "${INSTALL_DIR}/core"
+    mkdir -p "${INSTALL_DIR}/core" "${INSTALL_DIR}/config"
     cp -a "${temp_dir}/AECored_1.2/aecored" "${INSTALL_DIR}/core/"
-    cp -a "${temp_dir}/AECored_1.2/tests" "${INSTALL_DIR}/core/"
     cp -a "${temp_dir}/AECored_1.2/requirements.txt" "${INSTALL_DIR}/core/"
-    cp -a "${temp_dir}/AECored_1.2/config/config.ini" "${INSTALL_DIR}/core/config.ini"
+    cp -a "${temp_dir}/AECored_1.2/config/config.ini" "${INSTALL_DIR}/config/config.ini.template"
+
+    # Тестовый драйвер нужен только если он выбран через --drivers.
+    if [[ ",${DRIVERS}," == *",test_driver,"* ]]; then
+        mkdir -p "${INSTALL_DIR}/core/tests"
+        cp -a "${temp_dir}/AECored_1.2/tests/test_driver.py" "${INSTALL_DIR}/core/tests/"
+    fi
+
     rm -rf "${temp_dir}"
 }
 
@@ -283,7 +294,7 @@ remove_aecored()
 {
     remove_aecored_service
     rm -rf "${INSTALL_DIR}/core"
-    rm -f "${INSTALL_DIR}/config/aecored.ini" "${INSTALL_DIR}/config/scheduler.ini"
+    rm -f "${INSTALL_DIR}/config/aecored.ini" "${INSTALL_DIR}/config/scheduler.ini" "${INSTALL_DIR}/config/config.ini.template"
 }
 
 show_result()
