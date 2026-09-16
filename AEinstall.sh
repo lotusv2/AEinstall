@@ -250,7 +250,7 @@ clone_aecored()
     cp -a "${temp_dir}/AECored_1.2/aecored" "${INSTALL_DIR}/core/"
     cp -a "${temp_dir}/AECored_1.2/tests" "${INSTALL_DIR}/core/"
     cp -a "${temp_dir}/AECored_1.2/requirements.txt" "${INSTALL_DIR}/core/"
-    cp -a "${temp_dir}/AECored_1.2/config.ini" "${INSTALL_DIR}/core/"
+    cp -a "${temp_dir}/AECored_1.2/config/config.ini" "${INSTALL_DIR}/core/config.ini"
     rm -rf "${temp_dir}"
 }
 
